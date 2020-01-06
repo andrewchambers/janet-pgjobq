@@ -57,7 +57,7 @@ simple-worker.janet:
 - Job notifications are sent to the redis pubsub channel ```(string "pgjobq/" qname "-notify")```
 - Job results get published to the redis pubsub channel ```(string "pgjobq/job-" jobid)```
 - Jobs and results are stored in the table ```jobq```, the required schema tables
-  in postgres can be viewed in pqjobq.janet.
+  in postgres can be viewed in pgjobq.janet.
 - The implementation uses redis pubsub, but does not store any persistent state in redis.
 - Run the job worker in a process supervisor with restarts, it deliberately does NOT catch errors,
   this is so bugs like fd leaks can be recovered from without admin intervention.
