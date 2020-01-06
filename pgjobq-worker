@@ -1,0 +1,91 @@
+#! /usr/bin/env janet
+
+(import argparse)
+(import flock)
+(import redis)
+(import pq)
+(import pgjobq)
+
+(def argparse-params
+  ["The pgjobq worker process."
+    
+    "pg" {
+      :kind :option
+      :long "pg"
+      :help "The postgres url to connect to."
+      :required true
+    }
+    
+    "redis" {
+      :kind :option
+      :long "redis"
+      :help "The redis url to connect to."
+      :required true
+    }
+    
+    "job-queue" {
+     :kind :option
+     :long "job-queue"
+     :help "The job queue name to pull jobs from."
+     :required true
+    }
+
+    "worker-module" {
+     :kind :option
+     :long "worker-module"
+     :help "The janet module the worker function is loaded from.."
+     :required true
+    }
+
+    "lock-file" {
+     :kind :option
+     :long "lock-file"
+     :help "A lock file that the queue worker holds exclusively."
+     :required true
+    }
+
+    "fallback-poll-timer" {
+     :kind :option
+     :long "fallback-poll-timer"
+     :help "A fallback timeout in seconds that triggers a poll for events weren't signaled redis via pubsub."
+     :required false
+    }
+  ])
+
+(def args (argparse/argparse ;argparse-params))
+
+(unless args
+  (os/exit 1))
+
+(import* (args "worker-module") :as "worker-module")
+
+(defn main [&]
+
+  (defn redis-host-port
+    []
+    (def a (string/split ":" (args "redis")))
+    (unless (= (length a) 2) (error "redis url must be a host:port pair"))
+    (put a 1 (scan-number (get a 1)))
+    a)
+
+  (def redis-connect-args (redis-host-port))
+
+  (defn dial-redis
+    []
+    (redis/connect ;redis-connect-args))
+
+  (def pq-connect-arg (args "pg"))
+  
+  (defn dial-pq
+    []
+    (pq/connect pq-connect-arg))
+
+  (def fallback-poll-timer
+    (when (args "fallback-poll-timer")
+      (scan-number (args "fallback-poll-timer"))))
+  
+  (with [l (flock/new)]
+    (unless (flock/acquire (args "lock-file") :noblock :exclusive l)
+      (error "unable to aquire worker lock"))
+    (pgjobq/run-worker dial-pq dial-redis (args "job-queue")
+      worker-module/run-job :fallback-poll-timer fallback-poll-timer)))
