@@ -60,7 +60,7 @@ simple-worker.janet:
 - Run the job worker in a process supervisor with restarts, it deliberately does NOT catch errors,
   this is so bugs like fd leaks can be recovered from without admin intervention.
   A good example process supervisor is the authors tool https://github.com/andrewchambers/orderly.
-- For concurrent queue processing, when creating jobs, do a round robin on multiple queues (sharding)
-  and one worker per shard.
+- For concurrent queue processing, when creating jobs, do queue sharding
+  and launch one worker per shard.
 
 
