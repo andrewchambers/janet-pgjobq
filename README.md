@@ -5,7 +5,7 @@ A backend job queue with some useful properties:
 - Simple to operate, only depends on redis and postgres, which you probably use already.
 
 - Guaranteed processing of jobs in a single queue in fifo order. Allowing a
- simplified mental model, jobs queued later, will be executed after earlier jobs finish.
+  simplified mental model, jobs queued later, will be executed after earlier jobs finish.
 
 - Jobs are added during a database transaction, meaning all jobs are rolled back
   on error, and many jobs can be atomically added in a single transaction.
@@ -51,8 +51,6 @@ simple-worker.janet:
 
 ## Usage tips
 
-- For concurrent queue processing, when creating jobs, do a round robin on multiple queues (sharding)
-  and one worker per shard.
 - DO NOT run multiple workers per queue.
 - Job notifications are sent to the redis pubsub channel ```(string "pgjobq/" qname "-notify")```
 - Job results get published to the redis pubsub channel ```(string "pgjobq/job-" jobid)```
@@ -62,5 +60,7 @@ simple-worker.janet:
 - Run the job worker in a process supervisor with restarts, it deliberately does NOT catch errors,
   this is so bugs like fd leaks can be recovered from without admin intervention.
   A good example process supervisor is the authors tool https://github.com/andrewchambers/orderly.
+- For concurrent queue processing, when creating jobs, do a round robin on multiple queues (sharding)
+  and one worker per shard.
 
 
