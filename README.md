@@ -34,7 +34,8 @@ On your server, launch a queue worker:
 $ pgjobq-worker \
   --job-queue "your-job-queue" \
   --pg "postgresql://localhost?dbname=postgres" \
-  --redis "localhost:6379" --worker-module simple-worker \
+  --redis "localhost:6379"
+  --worker-module simple-worker \
   --lock-file /var/lock/your-job-queue.lock
 ```
 
