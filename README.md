@@ -22,7 +22,7 @@ In a web example, enqueue a job as part of a database transaction:
   (def jobid (pgjobq/try-enqueue-job pg-conn "your-job-queue" job MAX-QUEUED-JOBS))
   (unless jobid (error "job queue over loaded")))
 ```
-Outside the database notify the worker and wait for the result:
+Outside the database transaction notify the worker and wait for the result:
 ```
 (pgjobq/notify-job-worker redis-conn "your-job-queue")
 (def result (pgjobq/wait-for-job-completion pg-conn redis-conn jobid))
