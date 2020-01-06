@@ -50,8 +50,8 @@ simple-worker.janet:
 
 ## Usage tips
 
-- For concurrent queue processing, when creating jobs, do a round robin on queue shards and launch multiple
-  queue workers.
+- For concurrent queue processing, when creating jobs, do a round robin on multiple queues (sharding)
+  and one worker per shard.
 - DO NOT run multiple workers per queue.
 - Job notifications are sent to the redis pubsub channel ```(string "pgjobq/" qname "-notify")```
 - Job results get published to the redis pubsub channel ```(string "pgjobq/job-" jobid)```
