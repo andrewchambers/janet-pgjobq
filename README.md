@@ -25,9 +25,8 @@ In a web example, enqueue a job as part of a database transaction:
 Outside the database notify the worker and wait for the result:
 ```
 (pgjobq/notify-job-worker redis-conn "your-job-queue")
-(def result (pgjobq/wait-for-job-completion pg-conn dial-redis jobid))
+(def result (pgjobq/wait-for-job-completion pg-conn redis-conn jobid))
 ```
-
 On your server, launch a queue worker:
 ```
 $ pgjobq-worker \

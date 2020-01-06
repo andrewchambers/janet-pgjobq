@@ -48,10 +48,21 @@
   (redis-subscribe redis-conn (string "pgjobq/job-" jobid)))
 
 (defn wait-for-job-completion
-  [pg-conn dial-redis jobid & timeout]
-  (with [redis-conn (dial-redis)]
-    (when timeout
-      (redis/set-timeout timeout))
+  [pg-conn redis-conn jobid & timeout]
+
+  (default timeout 0)
+  (def orig-redis-conn-timeout (redis/get-timeout redis-conn))
+  
+  (defn restore-redis-conn
+    [c]
+    # Reconnect is the easiest way to ensure the connection
+    # is not in a wonky state (like subscription active)
+    # when an error has occured.
+    (redis/reconnect c)
+    (redis/set-timeout c ;orig-redis-conn-timeout))
+
+  (with [redis-conn restore-redis-conn]
+    (redis/set-timeout timeout 0)
     (subscribe-redis-conn-to-job-completion redis-conn jobid)
     (if-let [r (query-job-result pg-conn jobid)]
       r
