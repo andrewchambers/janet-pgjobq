@@ -6,4 +6,4 @@
   :source ["pgjobq.janet"])
 
 (declare-binscript
-  :main "pgjobq-worker"])
+  :main "pgjobq-worker")
