@@ -53,9 +53,10 @@ simple-worker.janet:
 - For concurrent queue processing, when creating jobs, do a round robin on queue shards and launch multiple
   queue workers.
 - DO NOT run multiple workers per queue.
+- Job notifications are sent to the redis pubsub channel ```(string "pgjobq/" qname "-notify")```
+- Job results get published to the redis pubsub channel ```(string "pgjobq/job-" jobid)```
+- Jobs and results are stored in the table ```jobq```, the required schema tables
+  in postgres can be viewed in pqjobq.janet.
+- The implementation uses redis pubsub, but does not store any persistent state in redis.
 
 
-## Implementation notes
-
-- The implementation uses redis pubsub.
-- The required schema tables in postgres can be viewed in pqjobq.janet.
