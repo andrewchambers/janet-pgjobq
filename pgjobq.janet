@@ -1,9 +1,9 @@
-(import json)
+(import jdn)
 (import pq)
 (import redis)
 
 (def job-schema `
-  create table jobq(jobid bigserial primary key, q TEXT, data jsonb, result jsonb, completedat timestamptz);
+  create table jobq(jobid bigserial primary key, q TEXT, data TEXT, result TEXT, completedat timestamptz);
 
   create index jobqqindex on jobq(q);
 
@@ -12,12 +12,12 @@
 
 (defn count-pending-jobs
   [pg-conn qname]
-  ((pq/one pg-conn "select count(*)::integer from jobq where q = $1 and completedat is null;" qname) "count"))
+  (pq/val pg-conn "select count(*)::integer from jobq where q = $1 and completedat is null;" qname))
 
 (defn try-enqueue-job 
   [pg-conn qname job-data &opt limit]
   (if (or (nil? limit) (< (count-pending-jobs pg-conn qname) limit))
-    ((pq/one pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (pq/jsonb job-data)) "jobid")
+    (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (pq/jsonb job-data))
     nil))
 
 (defn notify-job-worker
@@ -26,15 +26,15 @@
 
 (defn publish-job-result [pg-conn redis-conn jobid result]
   (pq/exec pg-conn "update jobq set result = $1, completedat = current_timestamp where jobid = $2;" (pq/jsonb result) jobid)
-  (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (json/encode result)))
+  (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
 
 (defn query-job [pg-conn jobid] 
-  (def j (pq/one pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid))
+  (def j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid))
   (when (nil? j) (error (string "no job with id " jobid)))
   j)
 
 (defn query-job-result [pg-conn jobid] 
-  (def j (pq/one pg-conn "select result from jobq where jobid = $1;" jobid))
+  (def j (pq/row pg-conn "select result from jobq where jobid = $1;" jobid))
   (when (nil? j) (error (string "no job with id " jobid)))
   (get j "result"))
 
@@ -66,15 +66,17 @@
     (subscribe-redis-conn-to-job-completion redis-conn jobid)
     (if-let [r (query-job-result pg-conn jobid)]
       r
-      (do 
-        (def reply (redis/get-reply redis-conn))
+      (match (redis/get-reply redis-conn)
+        ["message" _ j]
+
+        (def reply )
         (when (not= (get reply 0) "message") (error "unexpected redis reply"))
-        (def result (json/decode (reply 2)))
+        (def result (jdn/decode (reply 2)))
         result))))
 
 (defn next-job
   [pg-conn qname] 
-  (pq/one pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
+  (pq/row pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
 
 (defn run-worker
   [dial-pq dial-redis qname run-job &keys {:fallback-poll-timer fallback-poll-timer}]
@@ -95,9 +97,9 @@
                 (protect (redis/get-reply redis-conn))
                 (next-job pg-conn qname))))))
       (when (not (nil? j))
-        (def result (run-job (j "data")))
+        (def result (run-job (j :data)))
         (with [redis-conn (dial-redis)]
-          (publish-job-result pg-conn redis-conn (j "jobid") result))))))
+          (publish-job-result pg-conn redis-conn (j :jobid) result))))))
 
 # Repl test helpers.
 # (import ./pgjobq :as pgjobq)
