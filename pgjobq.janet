@@ -17,7 +17,7 @@
 (defn try-enqueue-job 
   [pg-conn qname job-data &opt limit]
   (if (or (nil? limit) (< (count-pending-jobs pg-conn qname) limit))
-    (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (pq/jsonb job-data))
+    (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (jdn/encode job-data))
     nil))
 
 (defn notify-job-worker
@@ -25,18 +25,20 @@
   (redis/command redis-conn "publish" (string "pgjobq/" qname "-notify") "notify"))
 
 (defn publish-job-result [pg-conn redis-conn jobid result]
-  (pq/exec pg-conn "update jobq set result = $1, completedat = current_timestamp where jobid = $2;" (pq/jsonb result) jobid)
+  (pq/exec pg-conn "update jobq set result = $1, completedat = current_timestamp where jobid = $2;" (jdn/encode result) jobid)
   (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
 
 (defn query-job [pg-conn jobid] 
   (def j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid))
   (when (nil? j) (error (string "no job with id " jobid)))
+  (put j :data (jdn/decode-one (j :data)))
+  (when (j :result)
+    (put j :result (jdn/decode-one (j :result))))
   j)
 
 (defn query-job-result [pg-conn jobid] 
-  (def j (pq/row pg-conn "select result from jobq where jobid = $1;" jobid))
-  (when (nil? j) (error (string "no job with id " jobid)))
-  (get j "result"))
+  (when-let [j (query-job pg-conn jobid)]
+    (j :result)))
 
 (defn- redis-subscribe
   [redis-conn topic]
@@ -68,15 +70,15 @@
       r
       (match (redis/get-reply redis-conn)
         ["message" _ j]
-
-        (def reply )
-        (when (not= (get reply 0) "message") (error "unexpected redis reply"))
-        (def result (jdn/decode (reply 2)))
-        result))))
+          (jdn/decode-one j)
+        (error "unexpected redis reply")))))
 
 (defn next-job
   [pg-conn qname] 
-  (pq/row pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
+  (def j (pq/row pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
+  (when j
+    (put j :data (jdn/decode-one (j :data))))
+  j)
 
 (defn run-worker
   [dial-pq dial-redis qname run-job &keys {:fallback-poll-timer fallback-poll-timer}]
