@@ -29,12 +29,11 @@
   (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
 
 (defn query-job [pg-conn jobid] 
-  (def j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid))
-  (when (nil? j) (error (string "no job with id " jobid)))
-  (put j :data (jdn/decode-one (j :data)))
-  (when (j :result)
-    (put j :result (jdn/decode-one (j :result))))
-  j)
+  (when-let [j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid)]
+    (put j :data (jdn/decode-one (j :data)))
+    (when (j :result)
+      (put j :result (jdn/decode-one (j :result))))
+    j))
 
 (defn query-job-result [pg-conn jobid] 
   (when-let [j (query-job pg-conn jobid)]
@@ -52,7 +51,7 @@
 (defn wait-for-job-completion
   [pg-conn redis-conn jobid & timeout]
 
-  (default timeout 0)
+  (default timeout 10)
   (def orig-redis-conn-timeout (redis/get-timeout redis-conn))
   
   (defn restore-redis-conn
