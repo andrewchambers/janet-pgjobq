@@ -98,7 +98,7 @@
                 (protect (redis/get-reply redis-conn))
                 (next-job pg-conn qname))))))
       (when (not (nil? j))
-        (def result (run-job (j :data)))
+        (def result (run-job pg-conn (j :data)))
         (with [redis-conn (dial-redis)]
           (publish-job-result pg-conn redis-conn (j :jobid) result))))))
 
