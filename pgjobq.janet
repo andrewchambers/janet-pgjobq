@@ -30,9 +30,9 @@
 
 (defn query-job [pg-conn jobid] 
   (when-let [j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid)]
-    (put j :data (jdn/decode-one (j :data)))
+    (put j :data (jdn/decode (j :data)))
     (when (j :result)
-      (put j :result (jdn/decode-one (j :result))))
+      (put j :result (jdn/decode (j :result))))
     j))
 
 (defn query-job-result [pg-conn jobid] 
@@ -69,14 +69,14 @@
       r
       (match (redis/get-reply redis-conn)
         ["message" _ j]
-          (jdn/decode-one j)
+          (jdn/decode j)
         (error "unexpected redis reply")))))
 
 (defn next-job
   [pg-conn qname] 
   (def j (pq/row pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
   (when j
-    (put j :data (jdn/decode-one (j :data))))
+    (put j :data (jdn/decode (j :data))))
   j)
 
 (defn run-worker
