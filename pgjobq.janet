@@ -3,9 +3,11 @@
 (import redis)
 
 (def job-schema `
-  create table jobq(jobid bigserial primary key, q TEXT, data TEXT, result TEXT, completedat timestamptz);
+  create table jobq(jobid bigserial primary key, position bigserial, q TEXT, data TEXT, result TEXT, completedat timestamptz);
 
   create index jobqqindex on jobq(q);
+
+  create index jobqpositionindex on jobq(q);
 
   create index jobqcompletedatindex on jobq(completedat);
 `)
@@ -20,12 +22,21 @@
     (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (jdn/encode job-data))
     nil))
 
+(defn reschedule-job 
+  [pg-conn jobid]
+  (pq/exec pg-conn 
+    "update jobq set position = nextval('jobq_position_seq') where jobid = $1;"
+    jobid))
+
 (defn notify-job-worker
   [redis-conn qname]
   (redis/command redis-conn "publish" (string "pgjobq/" qname "-notify") "notify"))
 
 (defn publish-job-result [pg-conn redis-conn jobid result]
-  (pq/exec pg-conn "update jobq set result = $1, completedat = current_timestamp where jobid = $2;" (jdn/encode result) jobid)
+  (pq/exec
+    pg-conn 
+    "update jobq set result = $1, completedat = current_timestamp where jobid = $2 and completedat is null;"
+    (jdn/encode result) jobid)
   (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
 
 (defn query-job [pg-conn jobid] 
@@ -74,7 +85,7 @@
 
 (defn next-job
   [pg-conn qname] 
-  (def j (pq/row pg-conn "select * from jobq where q = $1 and completedat is null order by jobid asc limit 1;" qname))
+  (def j (pq/row pg-conn "select * from jobq where (q = $1 and completedat is null) order by position asc limit 1;" qname))
   (when j
     (put j :data (jdn/decode (j :data))))
   j)
@@ -98,9 +109,14 @@
                 (protect (redis/get-reply redis-conn))
                 (next-job pg-conn qname))))))
       (when (not (nil? j))
-        (def result (run-job pg-conn (j :data)))
-        (with [redis-conn (dial-redis)]
-          (publish-job-result pg-conn redis-conn (j :jobid) result))))))
+        (match (run-job pg-conn (j :data))
+          [:job-complete result]
+          (with [redis-conn (dial-redis)]
+            (publish-job-result pg-conn redis-conn (j :jobid) result))
+          :reschedule
+            (reschedule-job pg-conn (j :jobid))
+          v
+          (errorf "job worker returned an expected result %p" v))))))
 
 # Repl test helpers.
 # (import ./pgjobq :as pgjobq)

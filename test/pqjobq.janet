@@ -5,7 +5,7 @@
 (import pq)
 (import shlex)
 (import tmppg)
-(import ../pgjobq :as pgjobq)
+(import ../pgjobq)
 
 (defn tmpredis
   []
@@ -53,10 +53,11 @@
         (assert (nil? (pgjobq/try-enqueue-job pg-conn "testq" @{"some" "too many jobs"} 2)))
         (assert (= (pgjobq/count-pending-jobs pg-conn "testq") 2))
         (assert (deep= (pgjobq/next-job pg-conn "testq")
-                       @{:jobid (int/s64 1) :q "testq" :data @{"some" "job"}}))
+                       @{:jobid (int/s64 1) :position (int/s64 1)  :q "testq" :data @{"some" "job"}}))
         (pgjobq/publish-job-result pg-conn redis-conn (int/s64 1) @{"status" "done"})
+        (pgjobq/reschedule-job pg-conn 2)
         (assert (deep= (pgjobq/next-job pg-conn "testq")
-                       @{:jobid (int/s64 2) :q "testq" :data @{"some" "other-job"}})))
+                       @{:jobid (int/s64 2) :position (int/s64 3) :q "testq" :data @{"some" "other-job"}})))
       (with [sub-conn (:connect tmp-redis)]
         (pgjobq/subscribe-redis-conn-to-job-completion sub-conn (int/s64 2))
         (pgjobq/publish-job-result pg-conn redis-conn (int/s64 2) @{:status "done"})
