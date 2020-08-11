@@ -16,17 +16,17 @@
   [pg-conn qname]
   (pq/val pg-conn "select count(*)::integer from jobq where q = $1 and completedat is null;" qname))
 
-(defn try-enqueue-job 
+(defn try-enqueue-job
   [pg-conn qname job-data &opt limit]
   (if (or (nil? limit) (< (count-pending-jobs pg-conn qname) limit))
     (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (jdn/encode job-data))
     nil))
 
-(defn reschedule-job 
+(defn reschedule-job
   [pg-conn jobid]
-  (pq/exec pg-conn 
-    "update jobq set position = nextval('jobq_position_seq') where jobid = $1;"
-    jobid))
+  (pq/exec pg-conn
+           "update jobq set position = nextval('jobq_position_seq') where jobid = $1;"
+           jobid))
 
 (defn notify-job-worker
   [redis-conn qname]
@@ -34,19 +34,19 @@
 
 (defn publish-job-result [pg-conn redis-conn jobid result]
   (pq/exec
-    pg-conn 
+    pg-conn
     "update jobq set result = $1, completedat = current_timestamp where jobid = $2 and completedat is null;"
     (jdn/encode result) jobid)
   (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
 
-(defn query-job [pg-conn jobid] 
+(defn query-job [pg-conn jobid]
   (when-let [j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid)]
     (put j :data (jdn/decode (j :data)))
     (when (j :result)
       (put j :result (jdn/decode (j :result))))
     j))
 
-(defn query-job-result [pg-conn jobid] 
+(defn query-job-result [pg-conn jobid]
   (when-let [j (query-job pg-conn jobid)]
     (j :result)))
 
@@ -64,7 +64,7 @@
 
   (default timeout 10)
   (def orig-redis-conn-timeout (redis/get-timeout redis-conn))
-  
+
   (defn restore-redis-conn
     [c]
     # Reconnect is the easiest way to ensure the connection
@@ -80,11 +80,11 @@
       r
       (match (redis/get-reply redis-conn)
         ["message" _ j]
-          (jdn/decode j)
+        (jdn/decode j)
         (error "unexpected redis reply")))))
 
 (defn next-job
-  [pg-conn qname] 
+  [pg-conn qname]
   (def j (pq/row pg-conn "select * from jobq where (q = $1 and completedat is null) order by position asc limit 1;" qname))
   (when j
     (put j :data (jdn/decode (j :data))))
@@ -114,7 +114,7 @@
           (with [redis-conn (dial-redis)]
             (publish-job-result pg-conn redis-conn (j :jobid) result))
           :reschedule
-            (reschedule-job pg-conn (j :jobid))
+          (reschedule-job pg-conn (j :jobid))
           v
           (errorf "job worker returned an expected result %p" v))))))
 
@@ -128,3 +128,4 @@
 # (pq/exec pg-conn "COMMIT;")
 # (pgjobq/try-enqueue-job pg-conn "testq" @{"hello" "world"})
 # (pgjobq/notify-job-worker redis-conn "testq")
+
