@@ -116,7 +116,7 @@
           :reschedule
           (reschedule-job pg-conn (j :jobid))
           v
-          (errorf "job worker returned an expected result %p" v))))))
+          (errorf "job worker returned an unexpected result %p" v))))))
 
 # Repl test helpers.
 # (import ./pgjobq :as pgjobq)
