@@ -1,9 +1,8 @@
-(import jdn)
 (import pq)
 (import redis)
 
 (def job-schema `
-  create table jobq(jobid bigserial primary key, position bigserial, q TEXT, data TEXT, result TEXT, completedat timestamptz);
+  create table jobq(jobid bigserial primary key, position bigserial, q TEXT, data TEXT, result TEXT, completedat bigint);
 
   create index jobqqindex on jobq(q);
 
@@ -18,8 +17,9 @@
 
 (defn try-enqueue-job
   [pg-conn qname job-data &opt limit]
+  (default limit 4096)
   (if (or (nil? limit) (< (count-pending-jobs pg-conn qname) limit))
-    (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (jdn/encode job-data))
+    (pq/val pg-conn "insert into jobq(q, data) values($1, $2) returning jobid;" qname (string/format "%j" job-data))
     nil))
 
 (defn reschedule-job
@@ -35,15 +35,15 @@
 (defn publish-job-result [pg-conn redis-conn jobid result]
   (pq/exec
     pg-conn
-    "update jobq set result = $1, completedat = current_timestamp where jobid = $2 and completedat is null;"
-    (jdn/encode result) jobid)
-  (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (jdn/encode result)))
+    "update jobq set result = $1, completedat = extract(epoch from now()) where jobid = $2 and completedat is null;"
+    (string/format "%j" result) jobid)
+  (redis/command redis-conn "publish" (string "pgjobq/job-" jobid) (string/format "%j" result)))
 
 (defn query-job [pg-conn jobid]
   (when-let [j (pq/row pg-conn "select jobid, data, result from jobq where jobid = $1;" jobid)]
-    (put j :data (jdn/decode (j :data)))
+    (put j :data (parse (j :data)))
     (when (j :result)
-      (put j :result (jdn/decode (j :result))))
+      (put j :result (parse (j :result))))
     j))
 
 (defn query-job-result [pg-conn jobid]
@@ -80,14 +80,14 @@
       r
       (match (redis/get-reply redis-conn)
         ["message" _ j]
-        (jdn/decode j)
+        (parse j)
         (error "unexpected redis reply")))))
 
 (defn next-job
   [pg-conn qname]
   (def j (pq/row pg-conn "select * from jobq where (q = $1 and completedat is null) order by position asc limit 1;" qname))
   (when j
-    (put j :data (jdn/decode (j :data))))
+    (put j :data (parse (j :data))))
   j)
 
 (defn run-worker

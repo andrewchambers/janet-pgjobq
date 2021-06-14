@@ -5,5 +5,3 @@
 (declare-source
   :source ["pgjobq.janet"])
 
-(declare-binscript
-  :main "pgjobq-worker")
